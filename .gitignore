@@ -1,0 +1,18 @@
+# dữ liệu và kết quả: không commit, chia sẻ qua Drive
+data/raw/*
+data/interim/*
+data/splits/*
+data_fake/
+models/*
+results/*
+reports/figures/*
+!**/.gitkeep
+
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+.DS_Store
+.vscode/
+.idea/

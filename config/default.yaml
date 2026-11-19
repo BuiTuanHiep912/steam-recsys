@@ -1,0 +1,41 @@
+# Cấu hình mặc định. Mỗi lần chạy thí nghiệm ghi lại file này vào results/.
+seed: 42
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  splits: data/splits
+  models: models
+  results: results/runs.csv
+  figures: reports/figures
+
+preprocess:
+  # Cắt mẫu: chỉ giữ review từ mốc này trở đi. Quyết định của A ở ngày 3.
+  time_window_start: "2021-01-01"
+  k_core: 10
+  positive_only: true        # chỉ giữ is_recommended == True
+
+split:
+  # Tỷ lệ mục tiêu theo số tương tác, A chọn mốc thời gian để đạt xấp xỉ.
+  train_ratio: 0.8
+  valid_ratio: 0.1
+
+eval:
+  k_list: [10, 20]
+
+# Cố định hết, chỉ alpha được quét. Đây là biến của RQ1.
+wmf:
+  factors: 64
+  regularization: 0.05
+  iterations: 20
+
+rq1:
+  schemes: [binary, log, linear, capped]
+  alphas: [1, 10, 40, 100]
+  cap_hours: 100
+
+knn:
+  k_neighbors: [20, 50, 100]
+
+content:
+  max_features: 5000
