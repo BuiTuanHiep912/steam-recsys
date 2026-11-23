@@ -161,6 +161,7 @@ def evaluate(
     k_list: Iterable[int] = (10, 20),
     item_pop: np.ndarray | None = None,
     n_items: int | None = None,
+    n_users: int | None = None,
 ) -> dict[str, float]:
     """Chấm điểm một mảng dự đoán. HÀM THUẦN — không đọc file, không gọi model.
 
@@ -170,6 +171,19 @@ def evaluate(
     truth    : {chỉ số hàng -> tập i_idx đúng trong tập kiểm thử}
     item_pop : số tương tác mỗi game TRONG TẬP HUẤN LUYỆN, cần cho novelty
     n_items  : kích thước catalog, cần cho coverage
+    n_users  : số người dùng TRONG TẬP HUẤN LUYỆN, cần cho novelty
+               (thêm ở buổi họp ngày 1)
+
+    Định nghĩa đã chốt ở buổi họp ngày 1 (chi tiết: src/eval/README.md)::
+
+        recall@K    = |top-K ∩ T| / min(|T|, K)
+        mrr         = 1 / hạng item đúng đầu tiên trong TOÀN BỘ preds (k=20);
+                      không trúng -> 0
+        novelty@10  = trung bình -log2((pop + 1) / (n_users + 1))
+        coverage@10 = số item khác nhau trong top-10 của mọi user / n_items
+
+    Thiếu item_pop hoặc n_users thì bỏ novelty; thiếu n_items thì bỏ coverage.
+    Không báo lỗi.
 
     Khóa trả về::
 

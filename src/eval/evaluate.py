@@ -57,7 +57,8 @@ def run_eval(
     * preds = rank_all(model, user_ids, k=max(k_list), item_subset=item_subset)
     * truth = build_truth(test_df, user_ids)
     * item_pop = np.bincount(train_df.i_idx, minlength=n_items)
-    * return evaluate(preds, truth, k_list, item_pop, n_items)
+    * n_users  = train_df.u_idx.nunique()      # số user TRONG TRAIN, cho novelty
+    * return evaluate(preds, truth, k_list, item_pop, n_items, n_users)
     """
     raise NotImplementedError
 

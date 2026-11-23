@@ -28,12 +28,17 @@ def ndcg_at_k(pred_row: np.ndarray, truth_set: set[int], k: int) -> float:
 
 
 def recall_at_k(pred_row: np.ndarray, truth_set: set[int], k: int) -> float:
-    """Tỷ lệ item đúng tìm được trong top-k."""
+    """|top-k ∩ T| / min(|T|, k). Nhất quán với IDCG của nDCG.
+
+    Chia cho min(|T|, k) để người có nhiều game trong test vẫn đạt được 1.
+    T rỗng -> 0.
+    """
     raise NotImplementedError
 
 
 def reciprocal_rank(pred_row: np.ndarray, truth_set: set[int]) -> float:
-    """1 / thứ hạng của item đúng ĐẦU TIÊN. Không có item đúng nào thì bằng 0."""
+    """1 / thứ hạng của item đúng ĐẦU TIÊN, xét TOÀN BỘ pred_row (k=20 khi gọi
+    từ run_eval). Không có item đúng nào thì bằng 0."""
     raise NotImplementedError
 
 
@@ -43,12 +48,12 @@ def coverage_at_k(preds: np.ndarray, n_items: int) -> float:
 
 
 def novelty_at_k(preds: np.ndarray, item_pop: np.ndarray, n_users: int) -> float:
-    """Độ phổ biến nghịch đảo trung bình.
+    """Độ phổ biến nghịch đảo trung bình, có làm trơn +1.
 
-        novelty = -(1/k) * sum_r log2( pop(i_r) / n_users )
+        novelty = trung bình trên mọi ô của preds của  -log2( (pop(i)+1) / (n_users+1) )
 
-    item_pop đếm TỪ TẬP HUẤN LUYỆN. Game càng ít người chơi thì novelty càng cao.
-    Cẩn thận chia cho 0 với game chưa ai chơi.
+    item_pop và n_users đếm TỪ TẬP HUẤN LUYỆN. Làm trơn +1 để game chưa ai chơi
+    (game phát hành sau mốc cắt, dùng cho RQ3) có novelty cao nhất nhưng hữu hạn.
     """
     raise NotImplementedError
 
@@ -59,6 +64,7 @@ def evaluate(
     k_list: Iterable[int] = (10, 20),
     item_pop: np.ndarray | None = None,
     n_items: int | None = None,
+    n_users: int | None = None,
 ) -> dict[str, float]:
     """Gộp mọi độ đo thành một dict.
 
@@ -88,3 +94,12 @@ def evaluate(
 #   MRR = 1/2 = 0,5
 #
 # Viết test khẳng định đúng các con số này trước khi chạy bất cứ mô hình nào.
+# Ví dụ 2 — coverage và novelty
+# n_items = 5, n_users = 3, item_pop = [3, 1, 0, 2, 1], k = 2
+# preds: user 0 -> [0, 1], user 1 -> [0, 3]
+#
+#   coverage@2 = |{0, 1, 3}| / 5 = 0,6
+#   novelty: item 0 -> -log2(4/4) = 0
+#            item 1 -> -log2(2/4) = 1
+#            item 3 -> -log2(3/4) = 0,4150
+#   novelty@2 = (0 + 1 + 0 + 0,4150) / 4 = 0,3538
