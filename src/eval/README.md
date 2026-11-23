@@ -3,6 +3,30 @@
 Đánh giá và phân tích. **Cả nhóm phụ thuộc vào `metrics.py`, nên làm nó trước mọi
 thứ khác.**
 
+## Định nghĩa độ đo đã chốt (họp ngày 1)
+
+Cả ba người đã đồng ý. Đổi bất kỳ dòng nào phải báo cả nhóm.
+
+| Độ đo | Định nghĩa | Ghi chú |
+|---|---|---|
+| nDCG@K | DCG / IDCG, IDCG dùng min(\|T\|, K) item đúng xếp đầu | T rỗng → 0 |
+| Recall@K | \|top-K ∩ T\| / min(\|T\|, K) | nhất quán với IDCG |
+| MRR | 1 / hạng item đúng đầu tiên trong top-20 | không trúng → 0 |
+| Coverage@10 | số item khác nhau trong top-10 của mọi user / n_items | tính trên cả tập, không trung bình |
+| Novelty@10 | trung bình −log2((pop + 1) / (n_users + 1)) | pop, n_users đếm từ train |
+
+**Quy ước chung**
+
+1. Trung bình theo user, chỉ tính user có ≥ 1 tương tác trong test.
+2. User có trong test nhưng không có trong train **vẫn được chấm**. A báo số lượng
+   trong bảng thống kê ngày 5.
+3. `recommend` của B đã loại game trong train, `rank_all` không loại lại, chỉ
+   `assert` không có -1 / NaN và đúng kích thước.
+4. `truth` dùng **chỉ số hàng** trong `user_ids` làm khóa, không dùng `u_idx`.
+5. `evaluate` có thêm tham số `n_users` (sửa `contracts.py` ngày 1).
+
+---
+
 ## Việc cần làm
 
 ### 1. `metrics.py` — ngày 1–3
