@@ -17,6 +17,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from implicit.als import AlternatingLeastSquares
+from scipy.sparse import csr_matrix
+from threadpoolctl import threadpool_limits
 
 from .base import BaseRecommender
 
@@ -52,12 +55,55 @@ class WMF(BaseRecommender):
 
         Cách an toàn: tự tính confidence bằng build_confidence của A, rồi đặt
         alpha=1.0. Kiểm tra lại docstring của đúng phiên bản đang cài.
+
+        ĐÃ KIỂM CHỨNG với implicit 0.7.3 (đọc mã nguồn):
+        * fit nhân ma trận với alpha khi alpha != 1.0 -> alpha=1.0 thì bỏ qua.
+        * Giá trị trong ma trận được dùng ĐÚNG LÀ c_ui: bộ giải cộng c*y_i vào
+          vế phải và (c - 1)*y_i y_i^T vào vế trái. Ô trống: p=0, c=1.
+        * Ma trận có chiều (n_users, n_items).
         """
-        raise NotImplementedError
+        if confidence is None:
+            raise ValueError(
+                "WMF cần confidence (build_confidence). Không tự đoán trọng số "
+                "mặc định để RQ1 không âm thầm chạy sai scheme."
+            )
+        confidence = np.asarray(confidence, dtype=np.float32)
+        if confidence.shape != (len(train_df),):
+            raise ValueError(
+                f"confidence có shape {confidence.shape}, cần ({len(train_df)},) "
+                "— cùng độ dài và thứ tự với train_df"
+            )
+        if not (confidence >= 1).all():
+            raise ValueError("confidence phải >= 1 (implicit dùng c - 1 làm trọng số thêm)")
+
+        C = csr_matrix(
+            (confidence, (train_df["u_idx"].to_numpy(), train_df["i_idx"].to_numpy())),
+            shape=(self.n_users, self.n_items),
+        )
+        if C.nnz != len(train_df):
+            raise ValueError("train_df có cặp (u_idx, i_idx) trùng: csr_matrix sẽ cộng dồn confidence")
+
+        # implicit tự song song hóa; để OpenBLAS cũng mở nhiều luồng thì hai lớp
+        # luồng tranh nhau và chậm hẳn (implicit tự cảnh báo điều này, ngay lúc
+        # khởi tạo). Chỉ giới hạn trong khối này, không ảnh hưởng phần còn lại.
+        with threadpool_limits(1, "blas"):
+            self.model = AlternatingLeastSquares(
+                factors=self.factors,
+                regularization=self.regularization,
+                iterations=self.iterations,
+                alpha=1.0,  # alpha đã nằm trong confidence, xem CẠM BẪY ở trên
+                random_state=self.seed,
+                use_gpu=False,  # CPU để kết quả lặp lại được giữa các máy
+            )
+            self.model.fit(C, show_progress=False)
 
     def _score_users(self, user_ids: np.ndarray) -> np.ndarray:
-        """s(u,i) = x_u . y_i"""
-        raise NotImplementedError
+        """s(u,i) = x_u . y_i
+
+        Người dùng không có trong train vẫn có hàng trong user_factors nhưng hàng
+        đó không học từ dữ liệu nào; BaseRecommender thay bằng độ phổ biến.
+        """
+        return self.model.user_factors[user_ids] @ self.model.item_factors.T
 
     def fold_in(self, liked_i_idx, confidence=None) -> np.ndarray:
         """Tính vector cho một người dùng MỚI mà không huấn luyện lại. Dành cho demo.
