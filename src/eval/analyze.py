@@ -43,6 +43,10 @@ def split_items_by_release(items: pd.DataFrame, cutoff_ts: int
     """Chia catalog thành (game cũ, game mới) theo date_release so với mốc cắt train.
 
     Dùng cho RQ3: game "mới" là game lọc cộng tác gần như không có dữ liệu để dựa vào.
+
+    Mốc cắt phải khớp với tập model đã học:
+      * học trên train          -> cutoff_ts = maps["cutoff_train"]
+      * học trên train+valid    -> cutoff_ts = maps["cutoff_valid"]   (chấm test)
     """
     raise NotImplementedError
 
@@ -52,6 +56,8 @@ def rq3_table(models: dict, train_df, test_df, items: pd.DataFrame,
     """Bảng kết quả RQ3: hai cột (game cũ, game mới) x hai dòng (WMF, content-based).
 
     Gọi run_eval hai lần cho mỗi mô hình, mỗi lần với một item_subset khác nhau.
+    train_df là tập gộp train+valid; MỌI mô hình (kể cả content-based của A) học lại
+    trên tập này. cutoff_ts = maps["cutoff_valid"].
     """
     raise NotImplementedError
 
