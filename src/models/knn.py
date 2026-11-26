@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from implicit.nearest_neighbours import CosineRecommender
+from scipy.sparse import csr_matrix
 
 from .base import BaseRecommender
 
@@ -23,21 +25,41 @@ class ItemKNN(BaseRecommender):
     def __init__(self, n_users: int, n_items: int, k_neighbors: int = 50):
         super().__init__(n_users, n_items)
         self.k_neighbors = k_neighbors
-        self.sim = None  # ma trận tương đồng, thưa
+        self.sim = None  # ma trận tương đồng (n_items, n_items), thưa
+        self._X = None   # ma trận tương tác (n_users, n_items), thưa, nhị phân
 
     def _fit(self, train_df: pd.DataFrame, confidence: np.ndarray | None) -> None:
         """Dùng implicit.nearest_neighbours.CosineRecommender.
 
-        TODO
-        ----
-        * Dựng ma trận thưa (n_users, n_items) từ train_df.
-        * CosineRecommender(K=self.k_neighbors).fit(X)
-        * Nhớ kiểm tra chiều của ma trận mà phiên bản implicit đang cài mong đợi.
+        Đã kiểm tra với implicit 0.7.3: CosineRecommender.fit nhận ma trận
+        (n_users, n_items) — nó chuẩn hóa từng CỘT (mỗi cột là một game) rồi
+        tính tương đồng giữa các cột. Hàng i của .similarity là K láng giềng của i.
+
+        confidence bị bỏ qua: tương đồng tính trên ma trận NHỊ PHÂN để đúng công
+        thức |U_i giao U_j| ở đầu file.
         """
-        raise NotImplementedError
+        rows = train_df["u_idx"].to_numpy()
+        cols = train_df["i_idx"].to_numpy()
+        X = csr_matrix(
+            (np.ones(len(rows), dtype=np.float32), (rows, cols)),
+            shape=(self.n_users, self.n_items),
+        )
+        X.data[:] = 1.0  # phòng trùng cặp (u, i): csr_matrix cộng dồn bản trùng
+
+        model = CosineRecommender(K=self.k_neighbors)
+        model.fit(X, show_progress=False)
+        self.sim = model.similarity.tocsr()
+        if self.sim.shape != (self.n_items, self.n_items):
+            raise ValueError(f"similarity có shape {self.sim.shape}, cần ({self.n_items}, {self.n_items})")
+        self._X = X
 
     def _score_users(self, user_ids: np.ndarray) -> np.ndarray:
-        raise NotImplementedError
+        """s(u, i) = tổng sim(j, i) với j trong lịch sử của u.
+
+        Người dùng không có lịch sử ra hàng toàn 0; BaseRecommender thay bằng
+        độ phổ biến. Loại game đã xem và cắt top-k cũng do BaseRecommender làm.
+        """
+        return (self._X[user_ids] @ self.sim).toarray()
 
     def export_similarity(self, path: str) -> None:
         """Xuất ma trận tương đồng cho A dùng trong demo. Hạn: ngày 5.
@@ -51,5 +73,23 @@ class ItemKNN(BaseRecommender):
 
         Đây là tiêu chí Xong khi của việc này: các cặp phải trông hợp lý với
         người đọc. Nếu ra toàn cặp vô nghĩa thì có lỗi ở đâu đó.
+
+        items: items.parquet (cần cột i_idx, title). Mỗi cặp chỉ xuất hiện một lần.
         """
-        raise NotImplementedError
+        if self.sim is None:
+            raise RuntimeError("phải gọi fit trước top_similar_pairs")
+        coo = self.sim.tocoo()
+        # Bỏ đường chéo (game giống chính nó) và gộp (i, j) với (j, i):
+        # ma trận đã cắt K láng giềng nên không đối xứng, giữ giá trị lớn hơn.
+        keep = coo.row != coo.col
+        i = np.minimum(coo.row[keep], coo.col[keep])
+        j = np.maximum(coo.row[keep], coo.col[keep])
+        pairs = (
+            pd.DataFrame({"i": i, "j": j, "sim": coo.data[keep]})
+            .groupby(["i", "j"], as_index=False)["sim"].max()
+            .nlargest(n, "sim")
+        )
+        title = items.set_index("i_idx")["title"]
+        pairs["title_i"] = title.reindex(pairs["i"]).to_numpy()
+        pairs["title_j"] = title.reindex(pairs["j"]).to_numpy()
+        return pairs.reset_index(drop=True)
