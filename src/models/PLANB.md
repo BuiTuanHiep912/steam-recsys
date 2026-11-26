@@ -47,24 +47,34 @@ Lưu ý: `contracts.py` và `make_fake.py` đã có trong repo — đọc trư�
 ---
 
 ## Giai đoạn 1 — Tuần 1: dựng nền
-- [ ] **1. Nhánh** — cập nhật `main`, tạo `feat/models`.
-- [ ] **2. Khung Recommender + cài `implicit` (ngày 1–2)**
+- [x] **1. Nhánh** — cập nhật `main`, tạo `feat/models`.
+  Dùng fork: `origin` = fork của B, `upstream` = repo nhóm. Cập nhật `main` = `git pull upstream main`.
+- [x] **2. Khung Recommender + cài `implicit` (ngày 1–2)**
   `base.py` lo: nhớ lịch sử cho `exclude_seen`, dự phòng theo độ phổ biến (đếm từ train) cho người dùng không có trong train.
   Xong khi: mô hình rỗng trả mảng **int32** đúng shape `(len(user_ids), k)`, không -1/NaN, **kể cả với người dùng không có trong train**.
-- [ ] **3. MostPopular (ngày 3)** — đếm tương tác mỗi game TỪ TẬP TRAIN, không dùng cột user_reviews.
+  Lưu ý: `data_fake` không có người dùng mới (cả 500 người đều có trong train) → phải giả lập bằng cách bỏ người khỏi train mới thử được dự phòng.
+- [x] **3. MostPopular (ngày 3)** — đếm tương tác mỗi game TỪ TẬP TRAIN, không dùng cột user_reviews.
   Xong khi: top-10 hợp lý trên dữ liệu giả.
+  Kết quả (data_fake): nDCG@10 = 0,041 (tự tính tạm, chờ `run_eval` của C).
 - [ ] **4. ItemKNN (ngày 4–5)** — `implicit` CosineRecommender, quét K ∈ {20, 50, 100}.
   Xong khi: in được vài cặp game tương đồng cao nhất và trông hợp lý; nDCG@10 ≈ 0,25 trên dữ liệu giả (cần `run_eval` của C).
-- [ ] **5. Xuất ma trận tương đồng ItemKNN ra `models/`** cho demo của A (A cần từ ngày 11).
+  Quyết định: ItemKNN BỎ QUA `confidence`, tính tương đồng trên ma trận nhị phân (đúng công thức |U_i ∩ U_j| trong `knn.py`).
+  Trạng thái: xong trên data_fake — nDCG@10 = 0,248 / 0,251 / 0,250 (K = 20/50/100, tự tính tạm); 15/15 cặp đầu cùng nhóm. Còn: đối chiếu bằng `run_eval` của C; chọn K trên valid thật (mục 6).
+- [x] **5. Xuất ma trận tương đồng ItemKNN ra `models/`** cho demo của A (A cần từ ngày 11).
   Lưu kèm danh sách `app_id` theo thứ tự `i_idx` đã dùng khi huấn luyện, để A kiểm tra khớp với `items.parquet` lúc nạp.
+  Cách dùng: `ItemKNN.export_similarity(path, items)` ghi `<path>.npz` + `<path>.json`; A nạp bằng `load_similarity(path, items)` (báo lỗi nếu items.parquet đã bị sinh lại). → Báo A.
 - [ ] **6. Ngày 6–7 (họp đồng bộ):** chạy MostPopular + ItemKNN trên `splits/` thật, ra nDCG@10 cả nhóm tin được.
 
 ## Giai đoạn 2 — Tuần 2: thí nghiệm RQ1
-- [ ] **7. Stub confidence (ngày 8)** — viết stub `build_confidence` trong thư mục của B, đúng chữ ký hợp đồng, trả mảng cùng độ dài/thứ tự với df. Khi A xong: đổi import sang `src.data.signals`, xóa stub.
+- [x] **7. Stub confidence (ngày 8)** — viết stub `build_confidence` trong thư mục của B, đúng chữ ký hợp đồng, trả mảng cùng độ dài/thứ tự với df. Khi A xong: đổi import sang `src.data.signals`, xóa stub.
+  Ở `src/experiments/confidence_stub.py`.
 - [ ] **8. WMF/ALS (ngày 8–10)** — `AlternatingLeastSquares(factors=64, regularization=0.05, iterations=20, alpha=1.0)`. KHÔNG tinh chỉnh siêu tham số nào ngoài alpha của build_confidence.
-  Ghi chú (chưa verify): alpha đã nằm trong build_confidence nên alpha của ALS = 1.0 để tránh nhân hai lần. Kiểm tra API `implicit` theo phiên bản đã cài (định dạng ma trận user×item cho fit/recommend).
-  Seed: `random_state` lấy từ `config/default.yaml`, không gõ cứng trong code.
+  ĐÃ KIỂM CHỨNG (đọc mã nguồn implicit 0.7.3): `fit` tự nhân ma trận với alpha khi alpha ≠ 1 → đặt alpha=1.0 là đúng; giá trị ma trận được dùng đúng là c_ui (bộ giải dùng c − 1); ma trận chiều (n_users, n_items).
+  Seed: `random_state` lấy từ `config/default.yaml`, không gõ cứng trong code (WMF nhận tham số `seed`, script thí nghiệm đọc config rồi truyền vào).
   Xong khi: chạy hết trên dữ liệu thật < 10 phút và vượt MostPopular trên nDCG@10; chạy cùng cấu hình 2 lần ra nDCG giống hệt.
+  Trạng thái: xong trên data_fake — vượt MostPopular (0,137 vs 0,041), 2 lần chạy giống hệt từng bit; OpenBLAS giới hạn 1 luồng trong lúc fit. Còn: chạy dữ liệu thật đo thời gian.
+  ⚠ Theo dõi: trên data_fake WMF (0,137) kém xa ItemKNN (0,25). Nghi do siêu tham số cố định quá lớn so với bộ giả nhỏ — CHƯA kiểm chứng; không tinh chỉnh (trái quy tắc), xem lại trên dữ liệu thật.
+  `fold_in` và `save` chưa làm (thuộc demo / mục 10).
 - [ ] **9. Thí nghiệm RQ1 (ngày 11–14)** — 4 scheme {binary, log, linear, capped} × alpha {1, 10, 40, 100} = 16 lần chạy. Chọn trên valid, báo cáo test MỘT lần.
   1. Quét 16 cấu hình: học trên `train`, chấm trên `valid`.
   2. Chọn cấu hình thắng (nếu đỉnh rơi vào biên alpha → mở rộng dải, chạy tiếp).
