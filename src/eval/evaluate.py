@@ -56,9 +56,18 @@ def run_eval(
     * user_ids = test_df.u_idx.unique()
     * preds = rank_all(model, user_ids, k=max(k_list), item_subset=item_subset)
     * truth = build_truth(test_df, user_ids)
+    * n_items  = đọc từ maps.json — KHÔNG suy ra từ train_df (tập gộp có thể thiếu game)
     * item_pop = np.bincount(train_df.i_idx, minlength=n_items)
     * n_users  = train_df.u_idx.nunique()      # số user TRONG TRAIN, cho novelty
+    * in số user trong test_df không có trong train_df (được chấm bằng fallback phổ biến)
     * return evaluate(preds, truth, k_list, item_pop, n_items, n_users)
+
+    Quy ước chấm test (chốt với B)
+    ------------------------------
+    * Chọn cấu hình trên valid; chấm test MỘT lần với model học lại trên train+valid.
+    * train_df truyền vào PHẢI là đúng tập model đã fit (tập gộp khi chấm test),
+      vì item_pop / n_users lấy từ đây.
+    * exclude_seen do model lo — model phải fit trên tập gộp.
     """
     raise NotImplementedError
 
@@ -67,5 +76,6 @@ def log_run(results: dict, config: dict, path: str = "results/runs.csv") -> None
     """Ghi một dòng vào results/runs.csv kèm siêu tham số và seed.
 
     Mỗi con số trong báo cáo phải truy được về một dòng ở đây.
+    Bắt buộc có cột train_set ∈ {"train", "train+valid"}.
     """
     raise NotImplementedError
