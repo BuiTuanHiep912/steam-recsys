@@ -11,10 +11,13 @@ Hades" — các mô hình nhân tố ẩn không làm được điều đó. Vì
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from implicit.nearest_neighbours import CosineRecommender
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, load_npz, save_npz
 
 from .base import BaseRecommender
 
@@ -61,12 +64,28 @@ class ItemKNN(BaseRecommender):
         """
         return (self._X[user_ids] @ self.sim).toarray()
 
-    def export_similarity(self, path: str) -> None:
+    def export_similarity(self, path: str, items: pd.DataFrame) -> None:
         """Xuất ma trận tương đồng cho A dùng trong demo. Hạn: ngày 5.
 
-        Lưu dạng thưa (scipy.sparse.save_npz) để file không quá lớn.
+        Ghi HAI file cạnh nhau (đuôi trong ``path`` bị thay):
+          <path>.npz   ma trận thưa (scipy.sparse.save_npz)
+          <path>.json  {model, k_neighbors, n_items, app_ids}
+        app_ids là app_id theo đúng thứ tự i_idx lúc huấn luyện. A nạp bằng
+        load_similarity để phát hiện khi items.parquet đã bị sinh lại.
         """
-        raise NotImplementedError
+        if self.sim is None:
+            raise RuntimeError("phải gọi fit trước export_similarity")
+        app_ids = _app_ids_in_order(items, self.n_items)
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        save_npz(p.with_suffix(".npz"), self.sim)
+        meta = {
+            "model": self.name,
+            "k_neighbors": self.k_neighbors,
+            "n_items": self.n_items,
+            "app_ids": app_ids.tolist(),
+        }
+        p.with_suffix(".json").write_text(json.dumps(meta), encoding="utf-8")
 
     def top_similar_pairs(self, items: pd.DataFrame, n: int = 20) -> pd.DataFrame:
         """In vài cặp game giống nhau nhất — để kiểm tra bằng mắt.
@@ -93,3 +112,36 @@ class ItemKNN(BaseRecommender):
         pairs["title_i"] = title.reindex(pairs["i"]).to_numpy()
         pairs["title_j"] = title.reindex(pairs["j"]).to_numpy()
         return pairs.reset_index(drop=True)
+
+
+def _app_ids_in_order(items: pd.DataFrame, n_items: int) -> np.ndarray:
+    """app_id sắp theo i_idx. Báo lỗi nếu i_idx không phủ đúng 0..n_items-1."""
+    idx = items["i_idx"].to_numpy()
+    if len(idx) != n_items or not np.array_equal(np.sort(idx), np.arange(n_items)):
+        raise ValueError(
+            f"items có {len(idx)} dòng / i_idx không phủ đúng 0..{n_items - 1}: "
+            "items.parquet không khớp với mô hình"
+        )
+    return items.sort_values("i_idx")["app_id"].to_numpy(dtype=np.int64)
+
+
+def load_similarity(path: str, items: pd.DataFrame) -> csr_matrix:
+    """Nạp ma trận do ItemKNN.export_similarity xuất ra, KIỂM TRA khớp items.
+
+    Báo lỗi nếu items.parquet hiện tại khác thứ tự app_id lúc huấn luyện —
+    nghĩa là A đã chạy lại preprocess và B phải xuất lại (xem PLANB.md).
+    """
+    p = Path(path)
+    meta = json.loads(p.with_suffix(".json").read_text(encoding="utf-8"))
+    saved = np.asarray(meta["app_ids"], dtype=np.int64)
+    try:
+        current = _app_ids_in_order(items, meta["n_items"])
+    except ValueError as e:
+        raise ValueError(f"{p.name}: {e}. B cần xuất lại ma trận tương đồng.") from e
+    if not np.array_equal(saved, current):
+        n_diff = int((saved != current).sum())
+        raise ValueError(
+            f"{p.name}: {n_diff} i_idx trỏ tới game khác so với lúc huấn luyện "
+            "(items.parquet đã bị sinh lại). B cần xuất lại ma trận tương đồng."
+        )
+    return load_npz(p.with_suffix(".npz")).tocsr()
