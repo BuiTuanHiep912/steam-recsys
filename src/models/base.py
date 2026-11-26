@@ -22,16 +22,19 @@ class BaseRecommender:
         self.n_users = n_users
         self.n_items = n_items
         self._seen: dict[int, set[int]] | None = None
+        # Độ phổ biến mỗi game đếm TỪ TẬP HUẤN LUYỆN, làm phương án dự phòng
+        # cho người dùng không có trong train (contracts.py: Recommender.recommend).
+        self._pop: np.ndarray | None = None
 
     def fit(self, train_df: pd.DataFrame, confidence: np.ndarray | None = None) -> None:
-        """Lưu lịch sử để exclude_seen hoạt động, rồi gọi _fit của lớp con.
-
-        TODO
-        ----
-        * self._seen = train_df.groupby("u_idx").i_idx.apply(set).to_dict()
-        * gọi self._fit(train_df, confidence)
+        """Lưu lịch sử để exclude_seen hoạt động, đếm độ phổ biến cho phương án
+        dự phòng, rồi gọi _fit của lớp con.
         """
-        raise NotImplementedError
+        self._seen = train_df.groupby("u_idx")["i_idx"].apply(set).to_dict()
+        self._pop = np.bincount(
+            train_df["i_idx"].to_numpy(), minlength=self.n_items
+        ).astype(np.float32)
+        self._fit(train_df, confidence)
 
     def _fit(self, train_df: pd.DataFrame, confidence: np.ndarray | None) -> None:
         raise NotImplementedError("lớp con cài đặt")
@@ -41,14 +44,46 @@ class BaseRecommender:
         raise NotImplementedError("lớp con cài đặt")
 
     def recommend(self, user_ids, k: int = 10, exclude_seen: bool = True) -> np.ndarray:
-        """Chấm điểm, loại game đã xem, lấy top-k.
+        """Chấm điểm, dự phòng cho người dùng mới, loại game đã xem, lấy top-k.
 
-        TODO
-        ----
-        * scores = self._score_users(np.asarray(user_ids))
-        * nếu exclude_seen: đặt -inf vào các ô đã xem
-        * np.argpartition rồi sắp xếp lại — nhanh hơn argsort toàn bộ
-        * trả về int32, đúng kích thước (len(user_ids), k), không có -1 hay NaN
-        * người dùng không có trong train vẫn phải trả về đủ k cột
+        Trả về int32 kích thước (len(user_ids), k), không có -1 hay NaN.
         """
-        raise NotImplementedError
+        if self._seen is None or self._pop is None:
+            raise RuntimeError(f"{self.name}: phải gọi fit trước recommend")
+        k = int(k)
+        if not 1 <= k <= self.n_items:
+            raise ValueError(f"k phải trong [1, {self.n_items}], nhận {k}")
+
+        user_ids = np.asarray(user_ids, dtype=np.int64).ravel()
+        n = len(user_ids)
+
+        # np.array luôn SAO CHÉP: lớp con có thể trả về mảng dùng chung
+        # (vd. MostPopular lặp một vector), sửa tại chỗ sẽ làm hỏng mô hình.
+        scores = np.array(self._score_users(user_ids), dtype=np.float32)
+        if scores.shape != (n, self.n_items):
+            raise ValueError(
+                f"{self.name}._score_users trả về shape {scores.shape}, "
+                f"cần {(n, self.n_items)}"
+            )
+        # argpartition coi NaN là lớn nhất -> game NaN lọt lên top mà không ai biết.
+        if np.isnan(scores).any():
+            raise ValueError(f"{self.name}._score_users trả về NaN")
+
+        # Dự phòng: người dùng không có trong train nhận điểm theo độ phổ biến.
+        cold = np.fromiter((int(u) not in self._seen for u in user_ids), dtype=bool, count=n)
+        if cold.any():
+            scores[cold] = self._pop
+
+        if exclude_seen:
+            for r, u in enumerate(user_ids):
+                seen = self._seen.get(int(u))
+                if seen:
+                    scores[r, list(seen)] = -np.inf
+
+        # Lấy k ứng viên điểm cao nhất (không cần sắp toàn bộ catalog),
+        # rồi chỉ sắp k ứng viên đó theo điểm giảm dần.
+        part = np.argpartition(-scores, k - 1, axis=1)[:, :k]
+        part_scores = np.take_along_axis(scores, part, axis=1)
+        order = np.argsort(-part_scores, axis=1, kind="stable")
+        top = np.take_along_axis(part, order, axis=1)
+        return top.astype(np.int32)
