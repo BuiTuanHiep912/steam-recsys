@@ -4,7 +4,6 @@ Chạy: python -m src.eval.run_basic_analysis --data data_fake
 Ghi ra: reports/phan_tich_11-14/  (bảng .csv, hình .png, gợi ý mẫu .txt)
 """
 import argparse
-import json
 from pathlib import Path
 
 import matplotlib
@@ -15,14 +14,14 @@ import pandas as pd
 
 from src.eval.analyze import popularity_bias, sample_recommendations
 from src.eval.evaluate import rank_all
-from src.eval.run_main import get_build_confidence
+from src.eval.run_main import fit_and_target, get_build_confidence, load
 from src.models.knn import ItemKNN
 from src.models.popular import MostPopular
 from src.models.wmf import WMF
 
 p = argparse.ArgumentParser()
 p.add_argument("--data", default="data_fake")
-p.add_argument("--split", default="valid")      # KHÔNG dùng test trước ngày 21
+p.add_argument("--split", default="valid", choices=["valid", "test"])  # test: chỉ ngày 21
 p.add_argument("--knn-k", type=int, default=50)
 p.add_argument("--scheme", default="log")
 p.add_argument("--alpha", type=float, default=40.0)
@@ -33,9 +32,9 @@ out = Path("reports/phan_tich_11-14")
 out.mkdir(parents=True, exist_ok=True)
 
 # ---- 1. Dữ liệu và mô hình -------------------------------------------------
-maps = json.load(open(f"{a.data}/interim/maps.json"))
-train = pd.read_parquet(f"{a.data}/splits/train.parquet")
-target = pd.read_parquet(f"{a.data}/splits/{a.split}.parquet")
+maps, sp = load(a.data)
+# chấm valid -> học train; chấm test -> học train+valid (quyết định của nhóm)
+train, target, train_set, _ = fit_and_target(sp, maps, a.split)
 items = pd.read_parquet(f"{a.data}/interim/items.parquet")
 nu, ni = maps["n_users"], maps["n_items"]
 item_pop = np.bincount(train["i_idx"].to_numpy(), minlength=ni)

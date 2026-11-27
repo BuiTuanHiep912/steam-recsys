@@ -72,6 +72,41 @@ def test_bat_loi():
     raise RuntimeError("rank_all không bắt được -1")
 
 
+# Mục đích: quyết định nhóm — log_run BẮT BUỘC có train_set hợp lệ
+def test_log_run_train_set():
+    import tempfile
+    from pathlib import Path
+    from src.eval.evaluate import log_run
+    path = Path(tempfile.mkdtemp()) / "runs.csv"
+    log_run({"ndcg@10": 0.5}, {"model": "X", "train_set": "train+valid"}, str(path))
+    assert pd.read_csv(path)["train_set"].tolist() == ["train+valid"]
+    for bad in ({"model": "X"}, {"model": "X", "train_set": "test"}):
+        try:
+            log_run({"ndcg@10": 0.5}, bad, str(path))
+        except ValueError:
+            continue
+        raise RuntimeError(f"log_run không bắt được config thiếu/sai train_set: {bad}")
+
+
+# Mục đích: chấm test thì học trên train+valid, mốc cắt là cutoff_valid
+def test_fit_and_target():
+    from src.eval.run_main import fit_and_target
+    tr = pd.DataFrame({"u_idx": [0], "i_idx": [1]})
+    va = pd.DataFrame({"u_idx": [0], "i_idx": [2]})
+    te = pd.DataFrame({"u_idx": [0], "i_idx": [3]})
+    sp, maps = {"train": tr, "valid": va, "test": te}, {"cutoff_train": 10, "cutoff_valid": 20}
+    fit, tgt, ts, cut = fit_and_target(sp, maps, "valid")
+    assert len(fit) == 1 and tgt is va and ts == "train" and cut == 10
+    fit, tgt, ts, cut = fit_and_target(sp, maps, "test")
+    assert sorted(fit.i_idx) == [1, 2] and tgt is te and ts == "train+valid" and cut == 20
+    sp["valid"] = tr                                   # cặp trùng -> phải báo lỗi
+    try:
+        fit_and_target(sp, maps, "test")
+    except ValueError:
+        return
+    raise RuntimeError("fit_and_target không bắt được cặp trùng")
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

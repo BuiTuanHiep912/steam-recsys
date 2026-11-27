@@ -23,6 +23,27 @@ def load(data_dir: str):
     return maps, splits
 
 
+def fit_and_target(splits: dict, maps: dict, split: str):
+    """Quyết định của nhóm: tập học phụ thuộc tập được chấm.
+
+        chấm valid -> học trên train         , train_set="train"      , cutoff_train
+        chấm test  -> học lại trên train+valid, train_set="train+valid", cutoff_valid
+
+    Trả về (fit_df, target_df, train_set, cutoff_ts). MỌI script dùng hàm này để
+    không ai tự ghép train+valid theo một cách khác.
+    """
+    if split == "valid":
+        return splits["train"], splits["valid"], "train", maps["cutoff_train"]
+    if split == "test":
+        fit = pd.concat([splits["train"], splits["valid"]], ignore_index=True)
+        n_dup = int(fit.duplicated(["u_idx", "i_idx"]).sum())
+        if n_dup:
+            # csr_matrix sẽ CỘNG DỒN confidence của cặp trùng -> WMF sai âm thầm.
+            raise ValueError(f"train+valid có {n_dup} cặp (u_idx, i_idx) trùng — báo A")
+        return fit, splits["test"], "train+valid", maps["cutoff_valid"]
+    raise ValueError(f"split phải là 'valid' hoặc 'test', nhận {split!r}")
+
+
 def get_build_confidence():
     """Dùng bản thật của A nếu đã cài, chưa thì dùng stub của B (cùng công thức)."""
     from src.data.signals import build_confidence
@@ -67,22 +88,23 @@ def main():
     a = p.parse_args()
 
     maps, sp = load(a.data)
-    train, target = sp["train"], sp[a.split]
-    print(f"train={len(train):,}  {a.split}={len(target):,}  "
-          f"user {a.split} không có trong train: {(~target.u_idx.isin(train.u_idx)).mean():.1%}")
+    fit_df, target, train_set, _ = fit_and_target(sp, maps, a.split)
+    print(f"học trên {train_set} ({len(fit_df):,} dòng)  chấm {a.split} ({len(target):,} dòng)  "
+          f"user {a.split} không có trong tập học: {(~target.u_idx.isin(fit_df.u_idx)).mean():.1%}")
 
     rows = []
     for model, conf, cfg in make_models(a.models.split(","), maps["n_users"], maps["n_items"],
                                         a.knn_k, a.scheme, a.alpha):
         confidence = None
         if conf == "conf":
-            confidence = get_build_confidence()(train, scheme=a.scheme, alpha=a.alpha)
+            confidence = get_build_confidence()(fit_df, scheme=a.scheme, alpha=a.alpha)
         t0 = time.time()
-        model.fit(train, confidence=confidence)
-        res = run_eval(model, train, target)
+        model.fit(fit_df, confidence=confidence)
+        # fit_df cũng là "train" của run_eval: item_pop, n_users, game đã xem đều đếm từ nó
+        res = run_eval(model, fit_df, target)
         sec = round(time.time() - t0, 1)
         log_run(res, {"model": model.name, "data": a.data, "split": a.split,
-                      "seed": SEED, "seconds": sec, **cfg}, a.out)
+                      "train_set": train_set, "seed": SEED, "seconds": sec, **cfg}, a.out)
         rows.append({"model": model.name, **res, "seconds": sec})
 
     table = pd.DataFrame(rows).round(4)

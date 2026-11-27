@@ -97,19 +97,23 @@ def split_items_by_release(items: pd.DataFrame, cutoff_ts: int
 
 
 def rq3_table(models: dict, train_df, test_df, items: pd.DataFrame,
-              cutoff_ts: int, metric: str = "ndcg@10") -> pd.DataFrame:
+              cutoff_ts: int, k: int = 10) -> pd.DataFrame:
     """Hai cột (game cũ, game mới) x mỗi mô hình một dòng.
 
     Gọi run_eval hai lần cho mỗi mô hình, mỗi lần với một item_subset khác nhau.
     Khi chấm test: train_df là tập gộp train+valid; MỌI mô hình (kể cả content-based
     của A) học lại trên tập này. cutoff_ts = maps["cutoff_valid"].
+
+    Chỉ chấm nDCG@k với MỘT k (mặc định 10): nhóm game mới có thể rất nhỏ (data_fake:
+    17 game sau cutoff_valid), không đủ để xếp top-20.
     """
     old, new = split_items_by_release(items, cutoff_ts)
+    metric = f"ndcg@{k}"
     rows = {}
     for name, m in models.items():
         rows[name] = {
-            "game cũ": run_eval(m, train_df, test_df, item_subset=old)[metric],
-            "game mới": run_eval(m, train_df, test_df, item_subset=new)[metric],
+            "game cũ": run_eval(m, train_df, test_df, k_list=(k,), item_subset=old)[metric],
+            "game mới": run_eval(m, train_df, test_df, k_list=(k,), item_subset=new)[metric],
         }
     return pd.DataFrame(rows).T
 

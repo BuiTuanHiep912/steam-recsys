@@ -136,7 +136,10 @@ def log_run(results: dict, config: dict, path: str = "results/runs.csv") -> None
     Mỗi con số trong báo cáo phải truy được về một dòng ở đây.
     Bắt buộc có cột train_set ∈ {"train", "train+valid"}.
     """
-    row = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), **config, **results}
+    if config.get("train_set") not in ("train", "train+valid"):
+        raise ValueError(f"log_run cần config['train_set'] là 'train' hoặc 'train+valid', "
+                         f"nhận {config.get('train_set')!r}")
+    row ={"time": time.strftime("%Y-%m-%d %H:%M:%S"), **config, **results}
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     new = pd.DataFrame([row])
