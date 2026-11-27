@@ -83,7 +83,14 @@ def sample_recommendations(model, train_df: pd.DataFrame, items: pd.DataFrame,
 
 def split_items_by_release(items: pd.DataFrame, cutoff_ts: int
                            ) -> tuple[np.ndarray, np.ndarray]:
-    """(game cũ, game mới) theo date_release so với mốc cắt train."""
+    """(game cũ, game mới) theo date_release so với mốc cắt.
+
+    Dùng cho RQ3: game "mới" là game lọc cộng tác gần như không có dữ liệu để dựa vào.
+
+    Mốc cắt phải khớp với tập model đã học:
+      * học trên train          -> cutoff_ts = maps["cutoff_train"]
+      * học trên train+valid    -> cutoff_ts = maps["cutoff_valid"]   (chấm test)
+    """
     new = items["date_release"].to_numpy() >= cutoff_ts
     idx = items["i_idx"].to_numpy()
     return idx[~new], idx[new]
@@ -91,7 +98,12 @@ def split_items_by_release(items: pd.DataFrame, cutoff_ts: int
 
 def rq3_table(models: dict, train_df, test_df, items: pd.DataFrame,
               cutoff_ts: int, metric: str = "ndcg@10") -> pd.DataFrame:
-    """Hai cột (game cũ, game mới) x mỗi mô hình một dòng."""
+    """Hai cột (game cũ, game mới) x mỗi mô hình một dòng.
+
+    Gọi run_eval hai lần cho mỗi mô hình, mỗi lần với một item_subset khác nhau.
+    Khi chấm test: train_df là tập gộp train+valid; MỌI mô hình (kể cả content-based
+    của A) học lại trên tập này. cutoff_ts = maps["cutoff_valid"].
+    """
     old, new = split_items_by_release(items, cutoff_ts)
     rows = {}
     for name, m in models.items():
