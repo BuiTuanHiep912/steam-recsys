@@ -15,16 +15,32 @@ def dcg_at_k(hits: np.ndarray, k: int) -> float:
     """DCG = sum_{r=1..k} rel_r / log2(r + 1)
 
     hits: mảng 0/1 độ dài >= k, phần tử r là 1 nếu vị trí r gợi ý đúng.
+    cộng điểm cho mỗi lần trúng tức là một game trong danh sách gợi ý và người chơi thực sự có tương tác với game này
+    hits[i] = 0 tức game ở vị trí i + 1 không trúng
+    hits[i] = 1 tức game ở vị trí i + 1 trúng
     """
-    raise NotImplementedError
+    hits = np.asarray(hits, dtype=np.float64)[:k]
+    if hits.size == 0:
+        return 0.0
+    return float(np.sum(hits / np.log2(np.arange(2, hits.size + 2)))) # công thức tính nếu trúng là 1 / log2(hạng + 1)
 
 
 def ndcg_at_k(pred_row: np.ndarray, truth_set: set[int], k: int) -> float:
     """nDCG = DCG / IDCG.
 
     IDCG là DCG của trường hợp lý tưởng: min(len(truth_set), k) item đúng xếp đầu.
+
+    nDCG đo cùng lúc 2 thứ: model gợi ý trúng bao nhiêu game và các game trúng nằm ở đâu trong danh sách
+    "Trúng" ở vị trí cao là dựa trên số điểm tính được ở hàm dcg_at_k
+    chuẩn hoá về 0 - 1
+    nDCG = DCG / IDCG.
+    IDCG là số điểm DCG cao nhất mà mỗi user đạt được
     """
-    raise NotImplementedError
+    if not truth_set:
+        return 0.0
+    hits = np.isin(np.asarray(pred_row)[:k], list(truth_set))
+    idcg = dcg_at_k(np.ones(min(len(truth_set), k)), k)
+    return dcg_at_k(hits, k) / idcg
 
 
 def recall_at_k(pred_row: np.ndarray, truth_set: set[int], k: int) -> float:
@@ -32,19 +48,31 @@ def recall_at_k(pred_row: np.ndarray, truth_set: set[int], k: int) -> float:
 
     Chia cho min(|T|, k) để người có nhiều game trong test vẫn đạt được 1.
     T rỗng -> 0.
+
+    Đo tìm được bao nhiêu game đúng (game mà thực sự được recommend)
     """
-    raise NotImplementedError
+    if not truth_set:
+        return 0.0
+    n_hit = int(np.isin(np.asarray(pred_row)[:k], list(truth_set)).sum())
+    return n_hit / min(len(truth_set), k)
 
 
 def reciprocal_rank(pred_row: np.ndarray, truth_set: set[int]) -> float:
     """1 / thứ hạng của item đúng ĐẦU TIÊN, xét TOÀN BỘ pred_row (k=20 khi gọi
-    từ run_eval). Không có item đúng nào thì bằng 0."""
-    raise NotImplementedError
+    từ run_eval). Không có item đúng nào thì bằng 0.
+
+    Người dùng phải kéo xuống bao xa mới gặp được game mình thích
+    pred_row là danh sách gợi ý của một model
+    """
+    for r, i in enumerate(pred_row, start=1):
+        if int(i) in truth_set:
+            return 1.0 / r
+    return 0.0
 
 
 def coverage_at_k(preds: np.ndarray, n_items: int) -> float:
     """Tỷ lệ catalog từng xuất hiện trong gợi ý của ít nhất một người dùng."""
-    raise NotImplementedError
+    return len(np.unique(preds)) / n_items
 
 
 def novelty_at_k(preds: np.ndarray, item_pop: np.ndarray, n_users: int) -> float:
@@ -54,8 +82,13 @@ def novelty_at_k(preds: np.ndarray, item_pop: np.ndarray, n_users: int) -> float
 
     item_pop và n_users đếm TỪ TẬP HUẤN LUYỆN. Làm trơn +1 để game chưa ai chơi
     (game phát hành sau mốc cắt, dùng cho RQ3) có novelty cao nhất nhưng hữu hạn.
+
+    đo mức độ phổ biến của game được rcm
+    độ phổ biến tính dựa trên số lượng user dã recommend
+    Giới hạn của báo cáo: "độ phổ biến được ước lượng qua số review tích cực trong train, vì dữ liệu không có số người chơi thực tế".
     """
-    raise NotImplementedError
+    pop = np.asarray(item_pop, dtype=np.float64)[np.asarray(preds)]
+    return float(np.mean(-np.log2((pop + 1) / (n_users + 1))))
 
 
 def evaluate(
@@ -75,8 +108,31 @@ def evaluate(
                  coverage@10, novelty@10
 
     Giá trị là float thường, không phải np.float32 — để ghi thẳng ra CSV.
+
+    ndcg@10: trúng bao nhiêu và có xếp game đúng lên cao không trong top 10 giá trị [0, 1]
+    ndcg@20: trúng bao nhiêu và có xếp game đúng lên cao không trong top 20 giá trị [0, 1]
+    recall@10: tìm được bao nhiêu phần game đúng trong top 10 giá trị [0, 1]
+    recall@20: tìm được bao nhiêu phần game đúng trong top 20 giá trị [0, 1]
+    mrr: trung bình người dùng phải kéo xuống bao xa mới gặp game đúng đầu tiên top 20 giá trị [0, 1]
+    coverage@10: model dùng được bao nhiêu phần catalog (catalog là danh sách game mà hệ thống có thể gợi ý) -> số game khác nhau xuất hiện trong top-10 của mọi user chia cho n_items
+    novelty@10: game được gợi ý ít phổ biến đến mức nào -log2((pop + 1)/(n_users + 1))
     """
-    raise NotImplementedError
+    preds = np.asarray(preds)
+    k_list = list(k_list)
+    rows = list(truth.keys())
+    out: dict[str, float] = {}
+
+    for k in k_list:
+        out[f"ndcg@{k}"] = float(np.mean([ndcg_at_k(preds[r], truth[r], k) for r in rows]))
+        out[f"recall@{k}"] = float(np.mean([recall_at_k(preds[r], truth[r], k) for r in rows]))
+    out["mrr"] = float(np.mean([reciprocal_rank(preds[r], truth[r]) for r in rows]))
+
+    top10 = preds[rows, :10]
+    if n_items is not None:
+        out["coverage@10"] = float(coverage_at_k(top10, n_items))
+    if item_pop is not None and n_users is not None:
+        out["novelty@10"] = float(novelty_at_k(top10, item_pop, n_users))
+    return out
 
 
 # ---------------------------------------------------------------------------
