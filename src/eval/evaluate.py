@@ -134,6 +134,7 @@ def log_run(results: dict, config: dict, path: str = "results/runs.csv") -> None
     """Ghi một dòng vào results/runs.csv kèm siêu tham số và seed.
 
     Mỗi con số trong báo cáo phải truy được về một dòng ở đây.
+    Bắt buộc có cột train_set ∈ {"train", "train+valid"}.
     """
     row = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), **config, **results}
     p = Path(path)
