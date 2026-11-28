@@ -98,5 +98,5 @@ def main(raw_dir: str) -> None:
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("--raw", default="data/raw")
+    p.add_argument("--raw", default="steam-recsys/data/raw")
     main(p.parse_args().raw)
