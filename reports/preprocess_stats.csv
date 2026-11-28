@@ -1,0 +1,3 @@
+stage,n_users,n_items,n_interactions,sparsity,median_interactions_per_user
+before_k_core,7536224,33933,15787274,0.9999382650514023,1.0
+after_k_core,161457,13984,2919144,0.9987070931837254,14.0

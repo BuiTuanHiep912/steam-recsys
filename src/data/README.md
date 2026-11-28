@@ -58,12 +58,27 @@ hoặc để mỗi người tự tải.
 - Ánh xạ `user_id` và `app_id` về chỉ số liên tục 0..n−1.
 - Ghép `games.csv` và `games_metadata.json` thành `items.parquet`.
 
+Chạy bằng `python -m src.data.preprocess --config config/default.yaml`. Kết quả
+gồm `data/interim/interactions.parquet`, `items.parquet` và `maps.json`;
+`maps.json` lưu `u_idx_to_user_id`, `i_idx_to_app_id` và `i_idx_to_title` theo
+thứ tự chỉ số để tra ngược game. Bảng trước/sau lọc k-core (kèm độ thưa) được
+ghi vào `reports/preprocess_stats.csv`.
+
 **Xong khi:** có bảng thống kê trước và sau lọc kèm độ thưa, và `maps.json` tra
 ngược được ra tên game.
 
 ### 2. `split.py` — ngày 5
 
-Chia theo thời gian, không chia ngẫu nhiên.
+Chạy `python -m src.data.split --config config/default.yaml`. Hai mốc cắt được
+chọn theo phân bố timestamp để tỷ lệ tương tác gần 80/10/10; các tương tác cùng
+timestamp luôn nằm trong cùng một split. Script ghi `train.parquet`,
+`valid.parquet`, `test.parquet` vào `data/splits/` và cập nhật hai cutoff vào
+`data/interim/maps.json`.
+
+Thông tin `date_release` của từng game được giữ trong
+`data/interim/items.parquet` (một dòng mỗi `i_idx`); C dùng bảng này cùng
+`cutoff_train`/`cutoff_valid` để chia nhóm game cold-start. Các file interaction
+giữ nguyên schema trong `contracts.py`.
 
 **Xong khi:** kiểm tra được không có tương tác nào trong test có mốc thời gian sớm
 hơn mốc cắt.
